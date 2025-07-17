@@ -5,6 +5,9 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { useToast } from '../hooks/use-toast'
+import { blink } from '../blink/client'
+import { saveFlashcardSet, generateId } from '../services/storage'
+import { FlashcardSet } from '../types/flashcard'
 
 interface Props {
   open: boolean
@@ -56,8 +59,24 @@ export default function CreateSetDialog({ open, onOpenChange }: Props) {
     setLoading(true)
     
     try {
-      // For now, just show success message
-      // Later we'll integrate with the database
+      // Get current user
+      const user = await blink.auth.me()
+      
+      // Create new flashcard set
+      const newSet: FlashcardSet = {
+        id: generateId(),
+        userId: user.id,
+        name: setName.trim(),
+        targetLanguage,
+        definitionLanguage,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        wordCount: 0
+      }
+      
+      // Save to local storage
+      saveFlashcardSet(newSet)
+      
       toast({
         title: 'Set Created!',
         description: `Created "${setName}" for learning ${LANGUAGES.find(l => l.code === targetLanguage)?.name} with ${LANGUAGES.find(l => l.code === definitionLanguage)?.name} definitions.`
@@ -69,6 +88,7 @@ export default function CreateSetDialog({ open, onOpenChange }: Props) {
       setDefinitionLanguage('en')
       onOpenChange(false)
     } catch (error) {
+      console.error('Error creating set:', error)
       toast({
         title: 'Error',
         description: 'Failed to create flashcard set. Please try again.',

@@ -1,11 +1,18 @@
 import { useState, useRef } from 'react'
+import * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Card, CardContent } from './ui/card'
-import { Upload, FileText, Image, Table } from 'lucide-react'
+import { Progress } from './ui/progress'
+import { Upload, FileText, Image, Table, Loader2 } from 'lucide-react'
 import { useToast } from '../hooks/use-toast'
+import { blink } from '../blink/client'
+import { parseSpreadsheetFile, extractTextFromImage } from '../services/fileParser'
+import { enhanceWords } from '../services/languageApi'
+import { saveFlashcardSet, saveWords, generateId, getFlashcardSets } from '../services/storage'
+import { FlashcardSet, Word } from '../types/flashcard'
 
 interface Props {
   open: boolean
@@ -39,9 +46,31 @@ export default function UploadWordsDialog({ open, onOpenChange }: Props) {
   const [targetLanguage, setTargetLanguage] = useState('')
   const [definitionLanguage, setDefinitionLanguage] = useState('en')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedSet, setSelectedSet] = useState('')
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [processingStep, setProcessingStep] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  
+  // Get user's flashcard sets
+  const [userSets, setUserSets] = useState<FlashcardSet[]>([])
+  
+  // Load user sets when dialog opens
+  React.useEffect(() => {
+    if (open) {
+      const loadSets = async () => {
+        try {
+          const user = await blink.auth.me()
+          const sets = getFlashcardSets(user.id)
+          setUserSets(sets)
+        } catch (error) {
+          console.error('Error loading sets:', error)
+        }
+      }
+      loadSets()
+    }
+  }, [open])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -61,31 +90,126 @@ export default function UploadWordsDialog({ open, onOpenChange }: Props) {
     }
 
     setLoading(true)
+    setProgress(0)
     
     try {
-      // For now, just show success message
-      // Later we'll integrate with file processing and AI enhancement
+      const user = await blink.auth.me()
+      
+      // Step 1: Parse file
+      setProcessingStep('Parsing file...')
+      setProgress(10)
+      
+      let uploadedWords
+      const fileName = selectedFile.name.toLowerCase()
+      
+      if (fileName.endsWith('.csv')) {
+        uploadedWords = await parseSpreadsheetFile(selectedFile)
+      } else if (fileName.match(/\.(jpg|jpeg|png|gif)$/)) {
+        uploadedWords = await extractTextFromImage(selectedFile)
+      } else {
+        throw new Error('Unsupported file format. Please use CSV or image files.')
+      }
+      
+      if (uploadedWords.length === 0) {
+        throw new Error('No words found in the file.')
+      }
+      
+      setProgress(30)
+      
+      // Step 2: Enhance words with AI
+      setProcessingStep(`Enhancing ${uploadedWords.length} words with definitions and pronunciations...`)
+      
+      const enhancedWords = await enhanceWords(
+        uploadedWords,
+        targetLanguage,
+        definitionLanguage,
+        (progress) => setProgress(30 + (progress * 0.6)) // 30% to 90%
+      )
+      
+      setProgress(90)
+      
+      // Step 3: Create or use existing set
+      let flashcardSet: FlashcardSet
+      
+      if (selectedSet) {
+        // Use existing set
+        const existingSet = userSets.find(s => s.id === selectedSet)
+        if (!existingSet) {
+          throw new Error('Selected flashcard set not found.')
+        }
+        flashcardSet = existingSet
+      } else {
+        // Create new set
+        const setName = `${LANGUAGES.find(l => l.code === targetLanguage)?.name} Words - ${new Date().toLocaleDateString()}`
+        flashcardSet = {
+          id: generateId(),
+          userId: user.id,
+          name: setName,
+          targetLanguage,
+          definitionLanguage,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          wordCount: 0
+        }
+        saveFlashcardSet(flashcardSet)
+      }
+      
+      // Step 4: Save words
+      setProcessingStep('Saving words...')
+      
+      const words: Word[] = enhancedWords.map(word => ({
+        id: generateId(),
+        setId: flashcardSet.id,
+        word: word.word,
+        definition: word.definition,
+        pronunciation: word.pronunciation || '',
+        audioUrl: word.audioUrl,
+        imageUrl: word.imageUrl,
+        example: word.example,
+        partOfSpeech: word.partOfSpeech,
+        difficulty: 'medium' as const,
+        correctCount: 0,
+        incorrectCount: 0,
+        createdAt: new Date().toISOString()
+      }))
+      
+      saveWords(words)
+      
+      // Update set word count
+      flashcardSet.wordCount = (flashcardSet.wordCount || 0) + words.length
+      flashcardSet.updatedAt = new Date().toISOString()
+      saveFlashcardSet(flashcardSet)
+      
+      setProgress(100)
+      
       toast({
-        title: 'Upload Started!',
-        description: `Processing ${selectedFile.name} for ${LANGUAGES.find(l => l.code === targetLanguage)?.name} words with ${LANGUAGES.find(l => l.code === definitionLanguage)?.name} definitions.`
+        title: 'Upload Complete!',
+        description: `Successfully processed ${words.length} words and added them to "${flashcardSet.name}".`
       })
       
       // Reset form
       setSelectedFile(null)
       setTargetLanguage('')
       setDefinitionLanguage('en')
+      setSelectedSet('')
+      setProgress(0)
+      setProcessingStep('')
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
       onOpenChange(false)
+      
     } catch (error) {
+      console.error('Upload error:', error)
       toast({
         title: 'Upload Failed',
-        description: 'Failed to process the file. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to process the file. Please try again.',
         variant: 'destructive'
       })
     } finally {
       setLoading(false)
+      setProgress(0)
+      setProcessingStep('')
     }
   }
 
@@ -153,6 +277,24 @@ export default function UploadWordsDialog({ open, onOpenChange }: Props) {
             </div>
           </div>
 
+          {/* Flashcard Set Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="flashcardSet">Add to Flashcard Set (Optional)</Label>
+            <Select value={selectedSet} onValueChange={setSelectedSet}>
+              <SelectTrigger>
+                <SelectValue placeholder="Create new set or select existing..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Create New Set</SelectItem>
+                {userSets.map((set) => (
+                  <SelectItem key={set.id} value={set.id}>
+                    {set.name} ({set.wordCount || 0} words)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* File Upload */}
           <div className="space-y-4">
             <Label>Upload File</Label>
@@ -203,9 +345,20 @@ export default function UploadWordsDialog({ open, onOpenChange }: Props) {
             )}
           </div>
 
+          {/* Progress Indicator */}
+          {loading && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm text-gray-600">{processingStep}</span>
+              </div>
+              <Progress value={progress} className="w-full" />
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancel
             </Button>
             <Button onClick={handleUpload} disabled={loading || !selectedFile}>

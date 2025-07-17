@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Plus, BookOpen, Upload, BarChart3, LogOut, Share2 } from 'lucide-react'
+import { Badge } from './ui/badge'
+import { Plus, BookOpen, Upload, BarChart3, LogOut, Share2, Play, Trash2 } from 'lucide-react'
 import { blink } from '../blink/client'
 import CreateSetDialog from './CreateSetDialog'
 import UploadWordsDialog from './UploadWordsDialog'
 import StudyMode from './StudyMode'
+import { getFlashcardSets, deleteFlashcardSet } from '../services/storage'
+import { FlashcardSet } from '../types/flashcard'
+import { useToast } from '../hooks/use-toast'
 
 interface User {
   id: string
@@ -22,6 +26,33 @@ export default function Dashboard({ user }: Props) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showCreateSet, setShowCreateSet] = useState(false)
   const [showUploadWords, setShowUploadWords] = useState(false)
+  const [flashcardSets, setFlashcardSets] = useState<FlashcardSet[]>([])
+  const { toast } = useToast()
+
+  // Load flashcard sets
+  useEffect(() => {
+    const loadSets = () => {
+      const sets = getFlashcardSets(user.id)
+      setFlashcardSets(sets)
+    }
+    
+    loadSets()
+    
+    // Refresh sets when dialogs close
+    const interval = setInterval(loadSets, 1000)
+    return () => clearInterval(interval)
+  }, [user.id])
+
+  const handleDeleteSet = (setId: string) => {
+    if (confirm('Are you sure you want to delete this flashcard set? This action cannot be undone.')) {
+      deleteFlashcardSet(setId)
+      setFlashcardSets(prev => prev.filter(set => set.id !== setId))
+      toast({
+        title: 'Set Deleted',
+        description: 'Flashcard set has been deleted successfully.'
+      })
+    }
+  }
 
   const handleLogout = () => {
     blink.auth.logout()
@@ -121,10 +152,56 @@ export default function Dashboard({ user }: Props) {
                 <CardDescription>Continue learning with your existing sets</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-gray-500">
-                  <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No flashcard sets yet. Create your first set to get started!</p>
-                </div>
+                {flashcardSets.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>No flashcard sets yet. Create your first set to get started!</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {flashcardSets.map((set) => (
+                      <Card key={set.id} className="hover:shadow-md transition-shadow">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <CardTitle className="text-base line-clamp-2">{set.name}</CardTitle>
+                              <CardDescription className="text-sm mt-1">
+                                {set.wordCount || 0} words
+                              </CardDescription>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteSet(set.id)}
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="flex items-center space-x-2 mt-2">
+                            <Badge variant="secondary" className="text-xs">
+                              {set.targetLanguage.toUpperCase()}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              Definitions: {set.definitionLanguage.toUpperCase()}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                              Updated {new Date(set.updatedAt).toLocaleDateString()}
+                            </span>
+                            <Button size="sm" onClick={() => setActiveTab('study')}>
+                              <Play className="h-4 w-4 mr-1" />
+                              Study
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
