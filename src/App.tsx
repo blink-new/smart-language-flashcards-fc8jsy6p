@@ -3,6 +3,7 @@ import { blink } from './blink/client'
 import { Toaster } from './components/ui/toaster'
 import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
+import InstallPrompt from './components/InstallPrompt'
 
 interface User {
   id: string
@@ -46,6 +47,7 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Dashboard user={user} />
+      <InstallPrompt />
       <Toaster />
     </div>
   )

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Plus, BookOpen, Upload, BarChart3, LogOut } from 'lucide-react'
+import { Plus, BookOpen, Upload, BarChart3, LogOut, Share2 } from 'lucide-react'
 import { blink } from '../blink/client'
 import CreateSetDialog from './CreateSetDialog'
 import UploadWordsDialog from './UploadWordsDialog'
@@ -27,6 +27,24 @@ export default function Dashboard({ user }: Props) {
     blink.auth.logout()
   }
 
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Memora - Smart Language Learning',
+          text: 'Check out this amazing language learning app!',
+          url: window.location.origin,
+        })
+      } catch (error) {
+        console.log('Error sharing:', error)
+      }
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(window.location.origin)
+      // You could show a toast here
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -37,11 +55,15 @@ export default function Dashboard({ user }: Props) {
               <BookOpen className="h-8 w-8 text-indigo-600" />
               <h1 className="text-xl font-semibold text-gray-900">Memora</h1>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {user.displayName || user.email}</span>
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <span className="text-sm text-gray-600 hidden sm:block">Welcome, {user.displayName || user.email}</span>
+              <Button variant="ghost" size="sm" onClick={handleShare}>
+                <Share2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
               <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Sign Out</span>
               </Button>
             </div>
           </div>
@@ -52,10 +74,10 @@ export default function Dashboard({ user }: Props) {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="upload">Upload Words</TabsTrigger>
-            <TabsTrigger value="study">Study Mode</TabsTrigger>
-            <TabsTrigger value="progress">Progress</TabsTrigger>
+            <TabsTrigger value="dashboard" className="text-xs sm:text-sm">Dashboard</TabsTrigger>
+            <TabsTrigger value="upload" className="text-xs sm:text-sm">Upload</TabsTrigger>
+            <TabsTrigger value="study" className="text-xs sm:text-sm">Study</TabsTrigger>
+            <TabsTrigger value="progress" className="text-xs sm:text-sm">Progress</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
@@ -146,6 +168,23 @@ export default function Dashboard({ user }: Props) {
       {/* Dialogs */}
       <CreateSetDialog open={showCreateSet} onOpenChange={setShowCreateSet} />
       <UploadWordsDialog open={showUploadWords} onOpenChange={setShowUploadWords} />
+      
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 mt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="text-center">
+            <p className="text-sm text-gray-600">
+              Made with ❤️ using{' '}
+              <a href="https://blink.new" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-700">
+                Blink
+              </a>
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              Share this app: {window.location.origin}
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
